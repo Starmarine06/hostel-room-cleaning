@@ -23,9 +23,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      # The server workspace runs `prisma generate` on install, which only needs a syntactically valid URL
-      - run: npm ci
+      # The committed lockfile is made on Windows and lacks the Linux build binaries (npm/cli#4828), so
+      # resolve fresh here. The server workspace runs `prisma generate` on install, which only needs a
+      # syntactically valid URL.
+      - run: rm -f package-lock.json && npm install --no-audit --no-fund
         env:
           DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
       - run: npm run build --workspace=client
