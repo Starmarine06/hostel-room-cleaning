@@ -104,6 +104,9 @@ export default function CleanerDashboard() {
     );
   }
 
+  // "Active" means still to be done or waiting for a student to confirm; finished jobs stay in the main list as history
+  const activeMine = myRequests.filter((r) => r.status === 'IN_PROGRESS' || r.status === 'CLEANED');
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -114,7 +117,7 @@ export default function CleanerDashboard() {
       </div>
 
       {/* My Active Requests */}
-      {myRequests.length > 0 && (
+      {activeMine.length > 0 && (
         <div className="card">
           <div className="px-6 py-4 border-b border-gray-100">
             <h2 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
@@ -123,7 +126,7 @@ export default function CleanerDashboard() {
             </h2>
           </div>
           <div className="divide-y divide-gray-100">
-            {myRequests.map((request) => {
+            {activeMine.map((request) => {
               const config = statusConfig[request.status];
               const StatusIcon = config.icon;
               return (
@@ -184,7 +187,7 @@ export default function CleanerDashboard() {
           </select>
         </div>
         <div className="divide-y divide-gray-100">
-          {filteredRequests.filter(r => !myRequests.find(m => m.id === r.id)).length === 0 ? (
+          {filteredRequests.filter(r => !activeMine.find(m => m.id === r.id)).length === 0 ? (
             <div className="px-6 py-12 text-center">
               <Filter className="h-12 w-12 mx-auto text-gray-300" />
               <h3 className="mt-4 text-lg font-medium text-gray-900">No available requests</h3>
@@ -194,7 +197,7 @@ export default function CleanerDashboard() {
             </div>
           ) : (
             filteredRequests
-              .filter(r => !myRequests.find(m => m.id === r.id))
+              .filter(r => !activeMine.find(m => m.id === r.id))
               .map((request) => {
                 const config = statusConfig[request.status];
                 const StatusIcon = config.icon;

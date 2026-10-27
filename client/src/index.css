@@ -46,62 +46,65 @@ code {
   outline-offset: 2px;
 }
 
-/* Button base styles */
-.btn {
-  @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
-}
+/* Component classes live in the components layer so utility classes (like pl-10 for an icon) can override them */
+@layer components {
+  /* Button base styles */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
 
-.btn-primary {
-  @apply bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
-}
+  .btn-primary {
+    @apply bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+  }
 
-.btn-secondary {
-  @apply bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500;
-}
+  .btn-secondary {
+    @apply bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500;
+  }
 
-.btn-danger {
-  @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
-}
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
 
-.btn-outline {
-  @apply border-2 border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500;
-}
+  .btn-outline {
+    @apply border-2 border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500;
+  }
 
-/* Input base styles */
-.input {
-  @apply w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-shadow;
-}
+  /* Input base styles */
+  .input {
+    @apply w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-shadow;
+  }
 
-.input-error {
-  @apply border-red-500 focus:ring-red-500;
-}
+  .input-error {
+    @apply border-red-500 focus:ring-red-500;
+  }
 
-/* Card base styles */
-.card {
-  @apply bg-white rounded-xl shadow-sm border border-gray-100;
-}
+  /* Card base styles */
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+  }
 
-/* Status badges */
-.badge {
-  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
-}
+  /* Status badges */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
 
-.badge-pending {
-  @apply bg-yellow-100 text-yellow-800;
-}
+  .badge-pending {
+    @apply bg-yellow-100 text-yellow-800;
+  }
 
-.badge-in-progress {
-  @apply bg-blue-100 text-blue-800;
-}
+  .badge-in-progress {
+    @apply bg-blue-100 text-blue-800;
+  }
 
-.badge-cleaned {
-  @apply bg-green-100 text-green-800;
-}
+  .badge-cleaned {
+    @apply bg-green-100 text-green-800;
+  }
 
-.badge-confirmed {
-  @apply bg-purple-100 text-purple-800;
-}
+  .badge-confirmed {
+    @apply bg-purple-100 text-purple-800;
+  }
 
-.badge-rejected {
-  @apply bg-red-100 text-red-800;
+  .badge-rejected {
+    @apply bg-red-100 text-red-800;
+  }
 }
