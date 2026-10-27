@@ -1,10 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -77,4 +77,11 @@ enum CleaningStatus {
   CLEANED
   CONFIRMED
   REJECTED
+}
+
+// Shared counters for login throttling (works across parallel function instances)
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime
 }

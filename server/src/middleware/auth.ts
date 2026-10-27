@@ -1,16 +1,9 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from '../http.js';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../index.js';
+import { prisma } from '../db.js';
 
-export interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    name: string;
-    role: string;
-    roomId: string | null;
-  };
-}
+export type { AuthRequest } from '../http.js';
+type AuthRequest = Request;
 
 export const authenticate = async (
   req: AuthRequest,

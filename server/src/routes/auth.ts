@@ -1,13 +1,13 @@
-import { Router, Response } from 'express';
+import { Router, Response } from '../http.js';
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
-import { prisma } from '../index.js';
+import { prisma } from '../db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import { googleLoginSchema, loginSchema, changePasswordSchema, updateProfileSchema } from '../utils/schemas.js';
 
-const router = Router();
+const router = new Router();
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = new OAuth2Client(googleClientId);

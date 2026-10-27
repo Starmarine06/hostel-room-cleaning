@@ -1,15 +1,15 @@
-import { Router, Response } from 'express';
+import { Router, Response } from '../http.js';
 import bcrypt from 'bcryptjs';
 import { randomInt } from 'node:crypto';
-import { Role } from '@prisma/client';
-import { prisma } from '../index.js';
+import type { Role } from '../generated/client.js';
+import { prisma } from '../db.js';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import { createUserSchema, importUsersSchema, updateUserSchema } from '../utils/schemas.js';
 import { parseCsv } from '../utils/csv.js';
 import { parseRoomNumber } from '../utils/rooms.js';
 
-const router = Router();
+const router = new Router();
 router.use(authenticate, authorize('ADMIN'));
 
 const MAX_IMPORT_ROWS = 5000;

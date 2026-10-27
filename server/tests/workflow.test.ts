@@ -1,25 +1,58 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 const API = process.env.API_URL || 'http://localhost:4100/api';
 
 type Json = Record<string, any>;
 
+// Neon's gateway sometimes answers 502/503/504 with its own plain-text error before the request reaches
+// the app. The website retries those once, so the tests do too, and count how often it was needed.
+let platformRetries = 0;
+afterAll(() => {
+  if (platformRetries) console.log(`PLATFORM_RETRIES=${platformRetries}`);
+});
+
 async function call(method: string, path: string, body?: unknown, token?: string) {
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json: Json = await res.json().catch(() => ({}));
-  return { status: res.status, json };
+  for (let attempt = 0; ; attempt++) {
+    let res: Response | undefined;
+    try {
+      res = await fetch(`${API}${path}`, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (error) {
+      if (attempt >= 2) throw error;
+      platformRetries++;
+      continue;
+    }
+    const text = await res.text();
+    let json: Json = {};
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* not JSON */
+    }
+    const platformError = [502, 503, 504].includes(res.status) && !json.message;
+    if (platformError && attempt < 2) {
+      platformRetries++;
+      await new Promise((r) => setTimeout(r, 800));
+      continue;
+    }
+    return { status: res.status, json };
+  }
 }
 
 let adminToken: string;
 let counter = 0;
 const uid = () => `${Date.now().toString(36)}${counter++}`;
+
+// A block code unique to this run, so tests never collide with rooms left in a persistent database
+const BLK = ('X' + Math.random().toString(36).slice(2, 5)).toUpperCase();
+const room = (n: number) => `${BLK}-${n}`;
+const lower = (n: number) => `${BLK.toLowerCase()}-${n}`;
 
 async function makeRoom(number: string, capacity = 4) {
   const room = await call('POST', '/rooms', { number, capacity }, adminToken);
@@ -57,9 +90,9 @@ describe('cleaning request workflow', () => {
     expect(login.status).toBe(200);
     adminToken = login.json.token;
 
-    roomId = await makeRoom('T-230');
+    roomId = await makeRoom(room(230));
     for (let i = 0; i < 4; i++) {
-      const r = await addPerson(`res${i}`, 'T-230');
+      const r = await addPerson(`res${i}`, room(230));
       expect(r.status).toBe(201);
       residents.push(r);
     }
@@ -68,12 +101,12 @@ describe('cleaning request workflow', () => {
   });
 
   it('enforces 4 residents per room', async () => {
-    expect((await addPerson('res5', 'T-230')).status).toBe(400);
+    expect((await addPerson('res5', room(230))).status).toBe(400);
   });
 
   it('blocks admin-only endpoints for non-admins', async () => {
     expect((await call('GET', '/users', undefined, residents[0].token)).status).toBe(403);
-    expect((await call('POST', '/users/import', { csv: 'a@b.co,T-230' }, residents[0].token)).status).toBe(403);
+    expect((await call('POST', '/users/import', { csv: `a@b.co,${room(230)}` }, residents[0].token)).status).toBe(403);
     expect((await call('POST', '/rooms', { number: 'Z-1' }, residents[0].token)).status).toBe(403);
   });
 
@@ -134,9 +167,9 @@ describe('cleaning request workflow', () => {
   });
 
   it('lets exactly one of many simultaneous requests through', async () => {
-    const raceRoom = await makeRoom('R-101');
+    const raceRoom = await makeRoom(room(111));
     const people = [];
-    for (let i = 0; i < 4; i++) people.push(await addPerson(`racer${i}`, 'R-101'));
+    for (let i = 0; i < 4; i++) people.push(await addPerson(`racer${i}`, room(111)));
 
     const results = await Promise.all(people.map((p) => call('POST', '/requests', { roomId: raceRoom }, p.token)));
     expect(results.filter((r) => r.status === 201)).toHaveLength(1);
@@ -144,8 +177,8 @@ describe('cleaning request workflow', () => {
   });
 
   it('does not let a resident read another room through query filters', async () => {
-    const otherId = await makeRoom('O-301');
-    const outsider = await addPerson('outsider', 'O-301');
+    const otherId = await makeRoom(room(301));
+    const outsider = await addPerson('outsider', room(301));
     await call('POST', '/requests', { roomId: otherId }, outsider.token);
 
     const peek = await call('GET', `/requests?roomId=${otherId}`, undefined, residents[0].token);
@@ -154,8 +187,8 @@ describe('cleaning request workflow', () => {
   });
 
   it('stores the rejection reason and frees the room', async () => {
-    const rid = await makeRoom('J-401');
-    const res = await addPerson('rejecter', 'J-401');
+    const rid = await makeRoom(room(401));
+    const res = await addPerson('rejecter', room(401));
     const created = await call('POST', '/requests', { roomId: rid }, res.token);
     const id = created.json.id as string;
     await call('POST', `/requests/${id}/claim`, undefined, cleanerToken);
@@ -175,32 +208,32 @@ describe('room numbers', () => {
     for (const bad of ['230', 'T230', 'T-', '-230', 'TOOLONG-1', 'T-12345', 'T 230 B']) {
       expect((await call('POST', '/rooms', { number: bad }, adminToken)).status).toBe(400);
     }
-    const ok = await call('POST', '/rooms', { number: 't-230 ' }, adminToken);
-    // T-230 already exists from the workflow suite or is created here: both are fine, but never stored as typed
+    const ok = await call('POST', '/rooms', { number: `${lower(230)} ` }, adminToken);
+    // Already created by the workflow suite, so this is a duplicate: rejected, but never stored as typed
     expect([201, 400]).toContain(ok.status);
 
-    const created = await call('POST', '/rooms', { number: 'n-512' }, adminToken);
+    const created = await call('POST', '/rooms', { number: lower(512) }, adminToken);
     expect(created.status).toBe(201);
-    expect(created.json.number).toBe('N-512');
-    expect(created.json.building).toBe('N');
+    expect(created.json.number).toBe(room(512));
+    expect(created.json.building).toBe(BLK);
     expect(created.json.floor).toBe(5);
   });
 });
 
 describe('csv import', () => {
   it('bulk assigns by email and room, reports bad rows, and issues passwords', async () => {
-    await makeRoom('C-101', 2);
+    await makeRoom(room(102), 2);
     const tag = uid();
     const csv = [
       `${String.fromCharCode(0xfeff)}Email,Room Number`, // Excel's "CSV UTF-8" starts with a BOM
-      `new1.${tag}@test.dev,c-101`, // normalised to C-101
-      `new2.${tag}@test.dev,C-101`,
-      `new3.${tag}@test.dev,C-101`, // room full (capacity 2)
-      `bad-email,C-101`,
+      `new1.${tag}@test.dev,${lower(102)}`, // normalised to upper case
+      `new2.${tag}@test.dev,${room(102)}`,
+      `new3.${tag}@test.dev,${room(102)}`, // room full (capacity 2)
+      `bad-email,${room(102)}`,
       `new4.${tag}@test.dev,230`, // wrong format
       `new5.${tag}@test.dev,`, // room missing
-      `new6.${tag}@test.dev,C-999`, // room does not exist
-      `new1.${tag}@test.dev,C-101`, // duplicate in file
+      `new6.${tag}@test.dev,${room(999)}`, // room does not exist
+      `new1.${tag}@test.dev,${room(102)}`, // duplicate in file
     ].join('\r\n');
 
     const res = await call('POST', '/users/import', { csv }, adminToken);
@@ -219,28 +252,28 @@ describe('csv import', () => {
     for (const acct of res.json.newAccounts) {
       const login = await call('POST', '/auth/login', acct);
       expect(login.status).toBe(200);
-      expect(login.json.user.room.number).toBe('C-101');
+      expect(login.json.user.room.number).toBe(room(102));
       expect(login.json.user.password).toBeUndefined();
     }
   });
 
   it('moves existing residents, creates missing rooms on request, and is idempotent', async () => {
     const tag = uid();
-    await makeRoom('M-101');
-    const first = await call('POST', '/users/import', { csv: `m.${tag}@test.dev,M-101` }, adminToken);
+    await makeRoom(room(201));
+    const first = await call('POST', '/users/import', { csv: `m.${tag}@test.dev,${room(201)}` }, adminToken);
     expect(first.json.summary.created).toBe(1);
 
-    const again = await call('POST', '/users/import', { csv: `m.${tag}@test.dev,M-101` }, adminToken);
+    const again = await call('POST', '/users/import', { csv: `m.${tag}@test.dev,${room(201)}` }, adminToken);
     expect(again.json.summary).toMatchObject({ unchanged: 1, created: 0 });
     expect(again.json.newAccounts).toHaveLength(0);
 
-    const blocked = await call('POST', '/users/import', { csv: `m.${tag}@test.dev,M-202` }, adminToken);
+    const blocked = await call('POST', '/users/import', { csv: `m.${tag}@test.dev,${room(202)}` }, adminToken);
     expect(blocked.json.summary.failed).toBe(1);
 
-    const moved = await call('POST', '/users/import', { csv: `m.${tag}@test.dev,M-202`, createMissingRooms: true }, adminToken);
+    const moved = await call('POST', '/users/import', { csv: `m.${tag}@test.dev,${room(202)}`, createMissingRooms: true }, adminToken);
     expect(moved.json.summary.moved).toBe(1);
     const rooms = await call('GET', '/rooms?limit=500', undefined, adminToken);
-    expect(rooms.json.data.some((r: Json) => r.number === 'M-202')).toBe(true);
+    expect(rooms.json.data.some((r: Json) => r.number === room(202))).toBe(true);
   });
 
   it('rejects a file whose header lacks the email or room column', async () => {
@@ -291,5 +324,89 @@ describe('login and passwords', () => {
     expect(test.status).toBe(404);
     const google = await call('POST', '/auth/google', { credential: 'fake' });
     expect([401, 503]).toContain(google.status);
+  });
+});
+
+describe('live updates', () => {
+  const WS = () => process.env.WS_URL || 'ws://localhost:4100/ws';
+
+  // Connects, authenticates and resolves once the server says it is ready
+  function listen(token: string) {
+    return new Promise<{ ws: WebSocket; events: Json[]; closed: () => boolean }>((resolve, reject) => {
+      const ws = new WebSocket(WS());
+      const events: Json[] = [];
+      let closed = false;
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token }));
+      ws.onclose = () => (closed = true);
+      ws.onerror = () => reject(new Error('websocket error'));
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(String(e.data));
+        if (msg.type === 'ready') resolve({ ws, events, closed: () => closed });
+        else if (msg.type === 'event') events.push(msg);
+        else if (msg.type === 'error') {
+          resolve({ ws, events: [msg], closed: () => closed });
+          ws.close(); // like the website, the client closes after an auth error
+        }
+      };
+      setTimeout(() => reject(new Error('websocket timeout')), 15000);
+    });
+  }
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it('pushes request events to the right people only', async () => {
+    await makeRoom(room(501));
+    await makeRoom(room(502));
+    const mine = await addPerson('live-mine', room(501));
+    const roommate = await addPerson('live-mate', room(501));
+    const other = await addPerson('live-other', room(502));
+    const cleaner = await addPerson('live-cleaner', undefined, 'CLEANER');
+
+    const sockets = await Promise.all([mine, roommate, other, cleaner].map((p) => listen(p.token)));
+    const [sMine, sMate, sOther, sCleaner] = sockets;
+
+    const created = await call('POST', '/requests', { roomId: mine.user.roomId }, mine.token);
+    expect(created.status).toBe(201);
+    await wait(1500);
+
+    expect(sMine.events.map((e) => e.event)).toContain('request:created');
+    expect(sMate.events.map((e) => e.event)).toContain('request:created');
+    expect(sCleaner.events.map((e) => e.event)).toContain('request:created');
+    expect(sOther.events).toHaveLength(0); // a different room hears nothing
+
+    await call('POST', `/requests/${created.json.id}/claim`, undefined, cleaner.token);
+    await wait(1500);
+    const update = sMine.events.find((e) => e.event === 'request:updated');
+    expect(update?.data.status).toBe('IN_PROGRESS');
+
+    sockets.forEach((s) => s.ws.close());
+  });
+
+  it('rejects a bad token and sends that socket nothing', async () => {
+    const bad = await listen('not-a-real-token');
+    expect(bad.events[0]?.type).toBe('error');
+
+    // an unauthenticated socket must not receive anyone's events
+    await makeRoom(room(503));
+    const resident = await addPerson('live-bad', room(503));
+    expect((await call('POST', '/requests', { roomId: resident.user.roomId }, resident.token)).status).toBe(201);
+    await wait(1500);
+    expect(bad.events).toHaveLength(1); // still just the error
+
+    // Neon does not finish the close handshake promptly, so only check the full close locally
+    if (!process.env.REMOTE_API) {
+      for (let i = 0; i < 50 && !bad.closed(); i++) await wait(100);
+      expect(bad.closed()).toBe(true);
+    }
+  });
+
+  it('answers malformed JSON with a clear 400, not a crash', async () => {
+    const res = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{not json',
+    });
+    const text = await res.text();
+    expect(res.status, `status ${res.status}, body: ${text.slice(0, 300)}`).toBe(400);
+    expect(JSON.parse(text).message).toBeTruthy();
   });
 });

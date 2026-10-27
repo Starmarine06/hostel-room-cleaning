@@ -1,8 +1,5 @@
-import 'dotenv/config';
 import bcrypt from 'bcryptjs';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma, pool } from '../src/db.js';
 
 async function main() {
   const adminEmail = (process.env.ADMIN_EMAIL || 'admin@hostel.com').toLowerCase();
@@ -33,4 +30,7 @@ async function main() {
   console.log('Seeded demo admin, cleaner, resident and sample rooms');
 }
 
-main().finally(() => prisma.$disconnect());
+main().finally(async () => {
+  await prisma.$disconnect();
+  await pool.end();
+});

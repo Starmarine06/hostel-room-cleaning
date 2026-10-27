@@ -1,12 +1,12 @@
-import { Router, Response } from 'express';
-import { Prisma, CleaningStatus } from '@prisma/client';
-import { prisma } from '../index.js';
+import { Router, Response } from '../http.js';
+import { Prisma, type CleaningStatus } from '../generated/client.js';
+import { prisma } from '../db.js';
+import { publish } from '../realtime.js';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth.js';
 import { validate, validateQuery } from '../middleware/validation.js';
 import { createRequestSchema, paginationSchema, rejectRequestSchema } from '../utils/schemas.js';
-import { io } from '../index.js';
 
-const router = Router();
+const router = new Router();
 router.use(authenticate);
 
 // Get all requests with filters
@@ -154,8 +154,7 @@ router.post('/', authorize('RESIDENT'), validate(createRequestSchema), async (re
     });
 
     // Emit real-time event
-    io.to(`room:${roomId}`).emit('request:created', request);
-    io.to('cleaners').emit('request:created', request);
+    await publish([`room:${roomId}`, 'cleaners'], 'request:created', request);
 
     res.status(201).json(request);
   } catch (error) {
@@ -212,8 +211,7 @@ router.post('/:id/claim', authorize('CLEANER'), async (req: AuthRequest, res: Re
     });
 
     // Emit real-time events
-    io.to(`room:${request.roomId}`).emit('request:updated', updatedRequest);
-    io.to('cleaners').emit('request:updated', updatedRequest);
+    await publish([`room:${request.roomId}`, 'cleaners'], 'request:updated', updatedRequest);
 
     res.json(updatedRequest);
   } catch (error) {
@@ -263,8 +261,7 @@ router.post('/:id/cleaned', authorize('CLEANER'), async (req: AuthRequest, res: 
     });
 
     // Emit real-time events
-    io.to(`room:${request.roomId}`).emit('request:updated', updatedRequest);
-    io.to('cleaners').emit('request:updated', updatedRequest);
+    await publish([`room:${request.roomId}`, 'cleaners'], 'request:updated', updatedRequest);
 
     res.json(updatedRequest);
   } catch (error) {
@@ -323,8 +320,7 @@ router.post('/:id/confirm', authorize('RESIDENT', 'ADMIN'), async (req: AuthRequ
     });
 
     // Emit real-time events
-    io.to(`room:${request.roomId}`).emit('request:updated', updatedRequest);
-    io.to('cleaners').emit('request:updated', updatedRequest);
+    await publish([`room:${request.roomId}`, 'cleaners'], 'request:updated', updatedRequest);
 
     res.json(updatedRequest);
   } catch (error) {
@@ -384,8 +380,7 @@ router.post('/:id/reject', authorize('RESIDENT', 'ADMIN'), validate(rejectReques
     });
 
     // Emit real-time events
-    io.to(`room:${request.roomId}`).emit('request:updated', updatedRequest);
-    io.to('cleaners').emit('request:updated', updatedRequest);
+    await publish([`room:${request.roomId}`, 'cleaners'], 'request:updated', updatedRequest);
 
     res.json(updatedRequest);
   } catch (error) {

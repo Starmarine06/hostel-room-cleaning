@@ -1,12 +1,12 @@
-﻿import { Router, Response } from 'express';
-import { Prisma } from '@prisma/client';
+import { Router, Response } from '../http.js';
+import { Prisma } from '../generated/client.js';
 import { parseRoomNumber } from '../utils/rooms.js';
-import { prisma } from '../index.js';
+import { prisma } from '../db.js';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth.js';
 import { validate, validateQuery } from '../middleware/validation.js';
 import { createRoomSchema, updateRoomSchema, paginationSchema } from '../utils/schemas.js';
 
-const router = Router();
+const router = new Router();
 
 // All routes require authentication
 router.use(authenticate);

@@ -49,17 +49,21 @@ export default function CleanerDashboard() {
     };
 
     const handleNewRequest = (newRequest: CleaningRequest) => {
-      setRequests(prev => [newRequest, ...prev]);
+      // The person who created it also receives this event, so skip it if it is already listed
+      setRequests(prev => (prev.some(r => r.id === newRequest.id) ? prev : [newRequest, ...prev]));
       toast.success(`New cleaning request for Room ${newRequest.room?.number}`);
     };
 
     socket.on('request:updated', handleRequestUpdate);
     socket.on('request:created', handleNewRequest);
+    socket.on('resync', loadRequests); // after a reconnect, catch up on anything missed
 
     return () => {
       socket.off('request:updated', handleRequestUpdate);
       socket.off('request:created', handleNewRequest);
+      socket.off('resync', loadRequests);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
   const loadRequests = async () => {

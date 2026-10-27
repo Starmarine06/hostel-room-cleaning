@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from '../http.js';
 import { ZodError, ZodTypeAny } from 'zod';
 
 export const validate = (schema: ZodTypeAny) => {
@@ -16,7 +16,7 @@ export const validate = (schema: ZodTypeAny) => {
           })),
         });
       }
-      next(error);
+      throw error;
     }
   };
 };
@@ -36,7 +36,7 @@ export const validateQuery = (schema: ZodTypeAny) => {
           })),
         });
       }
-      next(error);
+      throw error;
     }
   };
 };

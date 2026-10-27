@@ -25,6 +25,24 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// The hosting platform can briefly answer 502/503/504 (for example while an instance restarts).
+// Reads are always safe to repeat. A write is only repeated when the answer is clearly the platform's
+// own error page (not our JSON), which means the request never reached the app.
+api.interceptors.response.use(undefined, async (error) => {
+  const config = error.config as (typeof error.config & { _retried?: boolean }) | undefined;
+  const status = error.response?.status;
+  const platformError = status === 502 || status === 503 || status === 504;
+  const fromApp = typeof error.response?.data === 'object' && error.response?.data?.message;
+  const transient = !error.response || (platformError && !fromApp);
+  const safeToRepeat = config?.method === 'get' || (platformError && !fromApp);
+  if (config && safeToRepeat && transient && !config._retried) {
+    config._retried = true;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return api(config);
+  }
+  return Promise.reject(error);
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
