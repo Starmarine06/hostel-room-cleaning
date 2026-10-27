@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
 import bcrypt from 'bcryptjs';
 import { prisma } from './db.js';
+import { Prisma } from './generated/client.js';
 import { attachClient, type LiveSocket } from './realtime.js';
 import { loginRateLimit } from './rateLimit.js';
 import authRoutes from './routes/auth.js';
@@ -23,10 +24,15 @@ async function ensureAdmin() {
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) return;
   if (await prisma.user.findUnique({ where: { email } })) return;
-  await prisma.user.create({
-    data: { email, name: 'Admin', role: 'ADMIN', password: await bcrypt.hash(password, 12), activatedAt: new Date() },
-  });
-  console.log(`Created admin ${email}`);
+  try {
+    await prisma.user.create({
+      data: { email, name: 'Admin', role: 'ADMIN', password: await bcrypt.hash(password, 12), activatedAt: new Date() },
+    });
+    console.log(`Created admin ${email}`);
+  } catch (error) {
+    // Another instance created it a moment earlier: that is fine
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
+  }
 }
 
 export interface AppOptions {
@@ -34,9 +40,24 @@ export interface AppOptions {
   upgrade?: (request: Request) => { socket: LiveSocket; response: Response };
 }
 
+// Retried on later requests until it succeeds (for example if the first try ran before the migrations did)
+let adminDone = false;
+let adminAttempt: Promise<void> | undefined;
+function adminReady() {
+  if (adminDone) return Promise.resolve();
+  adminAttempt ??= ensureAdmin()
+    .then(() => {
+      adminDone = true;
+    })
+    .catch((error) => console.error('Could not create admin:', error))
+    .finally(() => {
+      adminAttempt = undefined;
+    });
+  return adminAttempt;
+}
+
 export function createApp(options: AppOptions = {}) {
   const app = new Hono();
-  const adminReady = ensureAdmin().catch((error) => console.error('Could not create admin:', error));
 
   app.use(
     '/api/*',
@@ -49,7 +70,7 @@ export function createApp(options: AppOptions = {}) {
   );
   app.use('/api/*', bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ message: 'Request too large' }, 413) }));
   app.use('/api/*', async (_c, next) => {
-    await adminReady; // the very first request must not race the admin creation
+    await adminReady(); // the very first request must not race the admin creation
     await next();
   });
 
