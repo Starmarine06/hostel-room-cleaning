@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String?
+  activatedAt DateTime?
+  name      String
+  role      Role     @default(RESIDENT)
+  roomId    String?
+  room      Room?    @relation(fields: [roomId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requestedRequests CleaningRequest[] @relation("RequestedRequests")
+  cleanerRequests   CleaningRequest[] @relation("CleanerRequests")
+  confirmedRequests CleaningRequest[] @relation("ConfirmedRequests")
+
+  @@index([roomId])
+  @@index([email])
+}
+
+model Room {
+  id          String   @id @default(cuid())
+  number      String   @unique
+  building    String
+  floor       Int
+  capacity    Int      @default(4)
+  residents   User[]
+  requests    CleaningRequest[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([number])
+}
+
+model CleaningRequest {
+  id          String           @id @default(cuid())
+  roomId      String
+  room        Room             @relation(fields: [roomId], references: [id])
+  requestedBy String
+  requester   User             @relation("RequestedRequests", fields: [requestedBy], references: [id])
+  status      CleaningStatus   @default(PENDING)
+  cleanerId   String?
+  cleaner     User?            @relation("CleanerRequests", fields: [cleanerId], references: [id])
+  confirmedBy String?
+  confirmer   User?            @relation("ConfirmedRequests", fields: [confirmedBy], references: [id])
+  requestedAt DateTime         @default(now())
+  claimedAt   DateTime?
+  cleanedAt   DateTime?
+  confirmedAt DateTime?
+  rejectReason String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([roomId])
+  @@index([status])
+  @@index([cleanerId])
+}
+
+enum Role {
+  RESIDENT
+  CLEANER
+  ADMIN
+}
+
+enum CleaningStatus {
+  PENDING
+  IN_PROGRESS
+  CLEANED
+  CONFIRMED
+  REJECTED
+}
