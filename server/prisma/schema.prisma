@@ -10,7 +10,12 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
+  regNo     String?  @unique
   password  String?
+  // True until the person has chosen their own password (set for every issued or reset password)
+  mustChangePassword Boolean @default(false)
+  // Goes up on every password change or reset; sign-in tokens carry the number they were issued with
+  tokenVersion Int @default(0)
   activatedAt DateTime?
   name      String
   role      Role     @default(RESIDENT)
@@ -45,8 +50,9 @@ model CleaningRequest {
   id          String           @id @default(cuid())
   roomId      String
   room        Room             @relation(fields: [roomId], references: [id])
-  requestedBy String
-  requester   User             @relation("RequestedRequests", fields: [requestedBy], references: [id])
+  // Emptied when the student is removed, so the cleaning history and its ratings stay accurate
+  requestedBy String?
+  requester   User?            @relation("RequestedRequests", fields: [requestedBy], references: [id], onDelete: SetNull)
   status      CleaningStatus   @default(PENDING)
   cleanerId   String?
   cleaner     User?            @relation("CleanerRequests", fields: [cleanerId], references: [id])
@@ -57,12 +63,16 @@ model CleaningRequest {
   cleanedAt   DateTime?
   confirmedAt DateTime?
   rejectReason String?
+  rating      Int?
+  feedback    String?
+  overdueAlertedAt DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
   @@index([roomId])
   @@index([status])
   @@index([cleanerId])
+  @@index([requestedAt])
 }
 
 enum Role {

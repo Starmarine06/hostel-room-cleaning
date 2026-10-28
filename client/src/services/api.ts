@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AuthResponse, User, Room, ImportResult, PaginatedResponse } from '../types';
+import type { AuthResponse, User, Room, ImportResult, PaginatedResponse, ReportRow, RatingReport, CleaningRequest } from '../types';
 
 export function getErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
@@ -46,6 +46,10 @@ api.interceptors.response.use(undefined, async (error) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // An issued password may only be used to choose a new one
+    if (error.response?.status === 403 && error.response?.data?.code === 'PASSWORD_CHANGE_REQUIRED') {
+      if (!window.location.pathname.endsWith('/profile')) window.location.href = `${import.meta.env.BASE_URL}profile`;
+    }
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       window.location.href = `${import.meta.env.BASE_URL}login`;
@@ -80,8 +84,10 @@ export const authService = {
     return user;
   },
 
-  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await api.post('/auth/change-password', { currentPassword, newPassword });
+  // Returns a fresh sign-in token: changing the password closes the older sessions
+  async changePassword(currentPassword: string, newPassword: string): Promise<string> {
+    const { data } = await api.post<{ token: string }>('/auth/change-password', { currentPassword, newPassword });
+    return data.token;
   },
 };
 
@@ -146,13 +152,28 @@ export const requestService = {
     return data;
   },
 
-  async confirm(id: string) {
-    const { data } = await api.post(`/requests/${id}/confirm`);
+  async confirm(id: string, feedback?: { rating: number; feedback?: string }) {
+    const { data } = await api.post(`/requests/${id}/confirm`, feedback ?? {});
     return data;
   },
 
   async reject(id: string, reason?: string) {
     const { data } = await api.post(`/requests/${id}/reject`, { reason });
+    return data;
+  },
+};
+
+export const reportService = {
+  async get(
+    kind: 'blocks' | 'rooms' | 'ratings',
+    params: { from?: string; to?: string; block?: string }
+  ): Promise<{ data: ReportRow[]; blocks?: ReportRow[]; rooms?: ReportRow[]; comments?: RatingReport['comments'] }> {
+    const { data } = await api.get(`/reports/${kind}`, { params });
+    return data;
+  },
+
+  async overdue(): Promise<{ thresholdHours: number; data: (CleaningRequest & { hoursWaiting: number })[] }> {
+    const { data } = await api.get('/reports/overdue');
     return data;
   },
 };
@@ -173,17 +194,17 @@ export const userService = {
     return data;
   },
 
-  async create(person: { email: string; name?: string; role: 'RESIDENT' | 'CLEANER'; room?: string }): Promise<{ user: User; tempPassword: string }> {
+  async create(person: { email: string; name?: string; role: 'RESIDENT' | 'CLEANER'; room?: string; regNo?: string }): Promise<{ user: User; tempPassword: string | null; emailed: boolean }> {
     const { data } = await api.post('/users', person);
     return data;
   },
 
-  async importCsv(csv: string, createMissingRooms: boolean): Promise<ImportResult> {
-    const { data } = await api.post<ImportResult>('/users/import', { csv, createMissingRooms });
+  async importCsv(csv: string, removeMissing = false): Promise<ImportResult> {
+    const { data } = await api.post<ImportResult>('/users/import', { csv, removeMissing });
     return data;
   },
 
-  async resetPassword(id: string): Promise<{ email: string; tempPassword: string }> {
+  async resetPassword(id: string): Promise<{ email: string; tempPassword: string | null; emailed: boolean }> {
     const { data } = await api.post(`/users/${id}/reset-password`);
     return data;
   },

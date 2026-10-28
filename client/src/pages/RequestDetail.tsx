@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { requestService, getErrorMessage } from '../services/api';
+import Stars from '../components/Stars';
 import toast from 'react-hot-toast';
 import { 
   User, 
@@ -57,6 +58,9 @@ export default function RequestDetail() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showReject, setShowReject] = useState(false);
   const [reason, setReason] = useState('');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -105,8 +109,9 @@ export default function RequestDetail() {
   const handleConfirm = async () => {
     setActionLoading('confirm');
     try {
-      const updated = await requestService.confirm(id!);
+      const updated = await requestService.confirm(id!, { rating, feedback: comment.trim() || undefined });
       setRequest(updated);
+      setShowConfirm(false);
       toast.success('Cleaning confirmed! Request complete.');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to confirm'));
@@ -196,7 +201,7 @@ export default function RequestDetail() {
             <p className="text-sm text-gray-500">Requested by</p>
             <p className="font-medium flex items-center space-x-2">
               <User className="h-4 w-4 text-gray-400" />
-              <span>{request.requester?.name || 'Unknown'}</span>
+              <span>{request.requester?.name || 'Former student'}</span>
             </p>
           </div>
           <div className="p-4 bg-gray-50 rounded-lg">
@@ -227,6 +232,13 @@ export default function RequestDetail() {
               </p>
             </div>
           )}
+          {request.rating ? (
+            <div className="p-4 bg-gray-50 rounded-lg sm:col-span-2">
+              <p className="text-sm text-gray-500">Feedback</p>
+              <Stars value={request.rating} />
+              {request.feedback && <p className="mt-1 text-gray-700">{request.feedback}</p>}
+            </div>
+          ) : null}
           {request.confirmedAt && (
             <div className="p-4 bg-gray-50 rounded-lg">
               <p className="text-sm text-gray-500">{request.status === 'REJECTED' ? 'Rejected at' : 'Confirmed at'}</p>
@@ -278,20 +290,12 @@ export default function RequestDetail() {
             </button>
           )}
 
-          {canConfirm && (
+          {canConfirm && !showConfirm && (
             <button
-              onClick={handleConfirm}
-              disabled={actionLoading === 'confirm'}
+              onClick={() => setShowConfirm(true)}
               className="btn bg-green-600 text-white hover:bg-green-700 flex-1 sm:flex-none"
             >
-              {actionLoading === 'confirm' ? (
-                <span className="flex items-center justify-center space-x-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Confirming...</span>
-                </span>
-              ) : (
-                'Confirm Cleaning'
-              )}
+              Confirm Cleaning
             </button>
           )}
 
@@ -301,6 +305,34 @@ export default function RequestDetail() {
             </button>
           )}
         </div>
+
+        {canConfirm && showConfirm && (
+          <div className="mt-4 space-y-3" aria-labelledby="feedback-heading">
+            <h3 id="feedback-heading" className="text-sm font-medium text-gray-700">How was the cleaning?</h3>
+            <Stars value={rating} onChange={setRating} />
+            <label htmlFor="feedback-comment" className="block text-sm font-medium text-gray-700">Feedback (optional)</label>
+            <textarea
+              id="feedback-comment"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              maxLength={1000}
+              rows={3}
+              className="w-full rounded-lg border border-gray-300 p-2 text-sm"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleConfirm}
+                disabled={rating === 0 || actionLoading === 'confirm'}
+                className="btn bg-green-600 text-white hover:bg-green-700"
+              >
+                {actionLoading === 'confirm' ? 'Confirming...' : 'Submit and confirm'}
+              </button>
+              <button onClick={() => setShowConfirm(false)} className="btn btn-secondary">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {canReject && showReject && (
           <div className="mt-4 space-y-3">

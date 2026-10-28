@@ -2,7 +2,8 @@ import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Upload, FileDown, UserPlus, Loader2 } from 'lucide-react';
 import { userService, getErrorMessage } from '../services/api';
-import { downloadCsv } from '../utils/download';
+import { downloadStudentTemplate } from '../utils/template';
+import { readSheet } from 'read-excel-file/browser';
 import type { Credential, ImportResult } from '../types';
 
 interface Props {
@@ -13,28 +14,54 @@ interface Props {
 export default function PeoplePanel({ onChanged, onCredentials }: Props) {
   const [fileName, setFileName] = useState('');
   const [csv, setCsv] = useState('');
-  const [createMissingRooms, setCreateMissingRooms] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [removeMissing, setRemoveMissing] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
 
-  const [person, setPerson] = useState({ email: '', name: '', role: 'RESIDENT' as 'RESIDENT' | 'CLEANER', room: '' });
+  const [person, setPerson] = useState({ email: '', name: '', role: 'RESIDENT' as 'RESIDENT' | 'CLEANER', room: '', regNo: '' });
   const [adding, setAdding] = useState(false);
 
   const handleFile = async (file: File | undefined) => {
     setResult(null);
     if (!file) return;
     setFileName(file.name);
+    if (/\.xlsx$/i.test(file.name)) {
+      // Excel sheets are turned into the same text the server already reads
+      try {
+        const sheet = await readSheet(file);
+        setCsv(sheet.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n'));
+      } catch {
+        setCsv('');
+        toast.error('Could not read this Excel file. Save it as .xlsx or .csv and try again.');
+      }
+      return;
+    }
     setCsv(await file.text());
   };
 
   const runImport = async () => {
+    if (
+      removeMissing &&
+      !confirm(
+        'Every student who is NOT in this file will be deleted for good, with their account and details. ' +
+          'Make sure the file lists all the students who stay. Continue?'
+      )
+    ) {
+      return;
+    }
     setImporting(true);
     try {
-      const res = await userService.importCsv(csv, createMissingRooms);
+      const res = await userService.importCsv(csv, removeMissing);
       setResult(res);
       if (res.newAccounts.length) onCredentials(res.newAccounts);
       onChanged();
-      if (res.summary.failed === 0) toast.success('Everyone was added');
+      if (res.summary.failed === 0) {
+        toast.success(
+          [res.emailed ? `${res.emailed} password email(s) sent` : '', res.removed ? `${res.removed} student(s) removed` : '']
+            .filter(Boolean)
+            .join(', ') || 'Done'
+        );
+      }
       else toast.error(`${res.summary.failed} row(s) need attention`);
     } catch (error) {
       toast.error(getErrorMessage(error, 'Import failed'));
@@ -52,11 +79,12 @@ export default function PeoplePanel({ onChanged, onCredentials }: Props) {
         name: person.name || undefined,
         role: person.role,
         room: person.role === 'RESIDENT' && person.room ? person.room : undefined,
+        regNo: person.role === 'RESIDENT' && person.regNo ? person.regNo : undefined,
       });
-      onCredentials([{ email: res.user.email, password: res.tempPassword }]);
-      setPerson({ email: '', name: '', role: 'RESIDENT', room: '' });
+      if (res.tempPassword) onCredentials([{ email: res.user.email, password: res.tempPassword }]);
+      setPerson({ email: '', name: '', role: 'RESIDENT', room: '', regNo: '' });
       onChanged();
-      toast.success('Person added');
+      toast.success(res.emailed ? 'Person added. Their password was emailed' : 'Person added');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Could not add this person'));
     } finally {
@@ -72,39 +100,36 @@ export default function PeoplePanel({ onChanged, onCredentials }: Props) {
         <div>
           <h2 id="import-heading" className="text-lg font-semibold text-gray-900">Add many students from a file</h2>
           <p className="text-sm text-gray-600 mt-1">
-            Upload a CSV file with two columns: the student's <strong>email</strong> and their <strong>room</strong>{' '}
-            (for example <span className="font-mono">T-230</span>). Anyone already added is moved to the room you list.
+            Upload an Excel or CSV sheet with the columns <strong>reg.no</strong>, <strong>name</strong>, <strong>room</strong>{' '}
+            (for example <span className="font-mono">T-230</span>), <strong>room size</strong> (most people the room holds) and{' '}
+            <strong>email</strong>. Rooms that do not exist are created. New students are emailed their password. Anyone already
+            added only has their room changed: no new password, no email.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={() => downloadCsv('students-template.csv', 'email,room\r\nstudent1@example.com,T-230\r\nstudent2@example.com,T-230\r\n')}
+          onClick={() => downloadStudentTemplate()}
           className="text-sm text-primary-600 hover:text-primary-700 flex items-center space-x-1"
         >
           <FileDown className="h-4 w-4" />
-          <span>Download a blank template</span>
+          <span>Download the Excel template</span>
         </button>
 
         <div>
-          <label htmlFor="csv-file" className="block text-sm font-medium text-gray-700 mb-1">CSV file</label>
+          <label htmlFor="csv-file" className="block text-sm font-medium text-gray-700 mb-1">Excel or CSV file</label>
           <input
             id="csv-file"
             type="file"
-            accept=".csv,text/csv"
+            accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(e) => handleFile(e.target.files?.[0])}
             className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:font-medium"
           />
         </div>
 
         <label className="flex items-start space-x-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={createMissingRooms}
-            onChange={(e) => setCreateMissingRooms(e.target.checked)}
-            className="mt-0.5"
-          />
-          <span>Create rooms that do not exist yet (4 beds each)</span>
+          <input type="checkbox" checked={removeMissing} onChange={(e) => setRemoveMissing(e.target.checked)} className="mt-0.5" />
+          <span>Remove students who are not in this file (they have left; their account and details are deleted)</span>
         </label>
 
         <button
@@ -123,6 +148,13 @@ export default function PeoplePanel({ onChanged, onCredentials }: Props) {
               {summary.created} added, {summary.assigned + summary.moved} moved to a room, {summary.unchanged} already
               correct, {summary.failed} need attention
             </p>
+            {result && result.removed > 0 && <p className="text-gray-700">{result.removed} student(s) not in the file were removed.</p>}
+            {result?.removalSkipped && <p className="text-red-700">{result.removalSkipped}</p>}
+            {result && result.mailEnabled && (
+              <p className="text-gray-700">
+                {result.emailed} password email(s) sent{result.newAccounts.length ? `; ${result.newAccounts.length} could not be emailed, so their passwords are shown above` : ''}.
+              </p>
+            )}
             {result && result.failures.length > 0 && (
               <ul className="max-h-48 overflow-y-auto divide-y divide-gray-100">
                 {result.failures.map((f) => (
@@ -145,6 +177,11 @@ export default function PeoplePanel({ onChanged, onCredentials }: Props) {
             <label htmlFor="p-email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input id="p-email" type="email" required className="input" value={person.email}
               onChange={(e) => setPerson((p) => ({ ...p, email: e.target.value }))} />
+          </div>
+          <div>
+            <label htmlFor="p-reg" className="block text-sm font-medium text-gray-700 mb-1">Reg. no (students)</label>
+            <input id="p-reg" type="text" className="input" disabled={person.role === 'CLEANER'} value={person.regNo}
+              onChange={(e) => setPerson((p) => ({ ...p, regNo: e.target.value }))} />
           </div>
           <div>
             <label htmlFor="p-name" className="block text-sm font-medium text-gray-700 mb-1">Name (optional)</label>

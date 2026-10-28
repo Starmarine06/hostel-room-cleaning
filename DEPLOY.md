@@ -11,7 +11,7 @@ Three pieces: **Neon** (database and API) + **Netlify** (website).
 ## One-time setup
 1. `neon login` (browser sign-in), then in `neon/`:
    `neon checkout <branch> --project-id <id> --env .env.production`
-   - `.env.production` holds `JWT_SECRET`, `CLIENT_URL` (the Netlify address), `ADMIN_EMAIL`, `ADMIN_PASSWORD`. It is gitignored.
+   - `.env.production` holds `JWT_SECRET`, `CLIENT_URL` (the Netlify address), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `CRON_SECRET` (any long random text; also add it as the GitHub repository secret `CRON_SECRET`; the workflow reads the existing `API_URL` variable. Mail settings: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`). It is gitignored.
    - Load it into the shell first (`set -a; . ./.env.production; set +a`) because `neon.ts` reads it.
 2. Apply the database migrations to that branch (from `server/`, with the branch's `DATABASE_URL_UNPOOLED` in the environment):
    `npx prisma migrate deploy`

@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
-import { roomService, userService, requestService, getErrorMessage } from '../services/api';
+import { useState, useEffect, useCallback } from 'react';
+import { roomService, userService, requestService, reportService, getErrorMessage } from '../services/api';
+import { useSocket } from '../context/SocketContext';
+import ReportsPanel from '../components/ReportsPanel';
 import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
 import PeoplePanel from '../components/PeoplePanel';
 import CredentialsNotice from '../components/CredentialsNotice';
 import { 
@@ -14,6 +17,8 @@ import {
   XCircle,
   Search,
   KeyRound,
+  BarChart3,
+  AlertTriangle,
 } from 'lucide-react';
 import type { Room, User, CleaningRequest, CleaningStatus, Role, Credential } from '../types';
 
@@ -32,7 +37,7 @@ const roleConfig: Record<Role, { label: string; className: string }> = {
 };
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'rooms' | 'users' | 'requests'>('rooms');
+  const [activeTab, setActiveTab] = useState<'rooms' | 'users' | 'requests' | 'reports'>('rooms');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<CleaningRequest[]>([]);
@@ -43,6 +48,34 @@ export default function AdminDashboard() {
   const [credentials, setCredentials] = useState<Credential[] | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [requestFilter, setRequestFilter] = useState<CleaningStatus | 'ALL'>('ALL');
+
+  const [overdue, setOverdue] = useState<{ id: string; room?: { number: string }; hoursWaiting: number }[]>([]);
+  const { socket } = useSocket();
+
+  // Rooms waiting more than 4 hours: checked every minute and pushed live when the server spots one
+  const loadOverdue = useCallback(async () => {
+    try {
+      setOverdue((await reportService.overdue()).data);
+    } catch {
+      /* the banner is a bonus; the rest of the page still works */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadOverdue();
+    const timer = setInterval(loadOverdue, 60_000);
+    const onOverdue = (request: { room?: { number: string } }) => {
+      toast.error(`Room ${request?.room?.number ?? ''} has waited over 4 hours for cleaning`, { duration: 10_000 });
+      loadOverdue();
+    };
+    socket?.on('request:overdue', onOverdue);
+    socket?.on('resync', loadOverdue);
+    return () => {
+      clearInterval(timer);
+      socket?.off('request:overdue', onOverdue);
+      socket?.off('resync', loadOverdue);
+    };
+  }, [socket, loadOverdue]);
 
   useEffect(() => {
     loadRooms();
@@ -90,7 +123,8 @@ export default function AdminDashboard() {
     if (!confirm('Give this person a new temporary password? Their old password will stop working.')) return;
     try {
       const res = await userService.resetPassword(userId);
-      setCredentials([{ email: res.email, password: res.tempPassword }]);
+      if (res.tempPassword) setCredentials([{ email: res.email, password: res.tempPassword }]);
+      else toast.success(`A new password was emailed to ${res.email}`);
     } catch (error) {
       toast.error(getErrorMessage(error, 'Could not reset password'));
     }
@@ -171,6 +205,7 @@ export default function AdminDashboard() {
     { id: 'rooms', label: 'Rooms', icon: Building2, count: rooms.length },
     { id: 'users', label: 'Users', icon: Users, count: users.length },
     { id: 'requests', label: 'Requests', icon: Sparkles, count: requests.length },
+    { id: 'reports', label: 'Reports', icon: BarChart3, count: overdue.length },
   ];
 
   return (
@@ -181,6 +216,22 @@ export default function AdminDashboard() {
           <p className="text-gray-600 mt-1">Manage rooms, users, and cleaning requests</p>
         </div>
       </div>
+
+      {overdue.length > 0 && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <p className="flex items-center space-x-2 font-medium text-red-800">
+            <AlertTriangle className="h-5 w-5" />
+            <span>{overdue.length} room{overdue.length > 1 ? 's' : ''} not cleaned for over 4 hours</span>
+          </p>
+          <ul className="mt-2 text-sm text-red-700 space-y-1">
+            {overdue.map((r) => (
+              <li key={r.id}>
+                <Link to={`/request/${r.id}`} className="underline">Room {r.room?.number}</Link> waiting {Math.floor(r.hoursWaiting)}h {Math.round((r.hoursWaiting % 1) * 60)}m
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="border-b border-gray-200">
         <nav className="flex space-x-8" aria-label="Admin tabs">
@@ -363,6 +414,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center space-x-3">
                           <h3 className="font-medium text-gray-900">{user.name}</h3>
                           <span className="text-sm text-gray-500">{user.email}</span>
+                          {user.regNo && <span className="text-sm text-gray-500">Reg {user.regNo}</span>}
                           <span className={`badge ${roleConfig[user.role].className}`}>
                             {roleConfig[user.role].label}
                           </span>
@@ -401,6 +453,8 @@ export default function AdminDashboard() {
         </div>
         </div>
       )}
+
+      {activeTab === 'reports' && <ReportsPanel />}
 
       {activeTab === 'requests' && (
         <div className="card">
@@ -446,7 +500,7 @@ export default function AdminDashboard() {
                           </span>
                         </div>
                         <p className="text-sm text-gray-500 mt-1">
-                          Requested by {request.requester?.name} at {new Date(request.requestedAt).toLocaleString()}
+                          Requested by {request.requester?.name ?? "a former student"} at {new Date(request.requestedAt).toLocaleString()}
                           {request.cleaner && ` • Cleaner: ${request.cleaner.name}`}
                           {request.confirmer && ` • Confirmed by: ${request.confirmer.name}`}
                         </p>

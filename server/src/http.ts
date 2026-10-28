@@ -18,6 +18,7 @@ export interface Request {
   query: Record<string, string>;
   headers: Record<string, string | undefined>;
   user?: AuthUser;
+  allowPending?: boolean; // set by routes that must work while a password change is still required
 }
 export type AuthRequest = Request;
 

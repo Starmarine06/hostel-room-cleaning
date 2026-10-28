@@ -4,7 +4,7 @@ import { prisma } from '../db.js';
 import { publish } from '../realtime.js';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth.js';
 import { validate, validateQuery } from '../middleware/validation.js';
-import { createRequestSchema, paginationSchema, rejectRequestSchema } from '../utils/schemas.js';
+import { confirmRequestSchema, createRequestSchema, paginationSchema, rejectRequestSchema } from '../utils/schemas.js';
 
 const router = new Router();
 router.use(authenticate);
@@ -271,9 +271,10 @@ router.post('/:id/cleaned', authorize('CLEANER'), async (req: AuthRequest, res: 
 });
 
 // Confirm cleaning (resident/admin - NOT the cleaner)
-router.post('/:id/confirm', authorize('RESIDENT', 'ADMIN'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/confirm', authorize('RESIDENT', 'ADMIN'), validate(confirmRequestSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const { rating, feedback } = req.body as { rating?: number; feedback?: string };
     const userId = req.user!.id;
 
     const request = await prisma.cleaningRequest.findUnique({
@@ -310,6 +311,8 @@ router.post('/:id/confirm', authorize('RESIDENT', 'ADMIN'), async (req: AuthRequ
         status: 'CONFIRMED',
         confirmedBy: userId,
         confirmedAt: new Date(),
+        rating: rating ?? null,
+        feedback: feedback || null,
       },
       include: {
         room: { select: { id: true, number: true, building: true, floor: true } },

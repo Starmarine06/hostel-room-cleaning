@@ -114,6 +114,7 @@ export async function attachClient(socket: LiveSocket) {
       client.rooms.clear();
       if (user.roomId) client.rooms.add(`room:${user.roomId}`);
       if (user.role === 'CLEANER' || user.role === 'ADMIN') client.rooms.add('cleaners');
+      if (user.role === 'ADMIN') client.rooms.add('admins');
       clearTimeout(authTimer);
       clients.add(client);
       // Keeps the connection alive through idle periods

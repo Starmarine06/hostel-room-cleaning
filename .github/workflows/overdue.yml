@@ -1,0 +1,17 @@
+name: Overdue room alerts
+
+# The API only runs when it is called, so this job calls it on a schedule (free on a public repo).
+# Needs the repository secret CRON_SECRET (same as the API's) and the repository variable API_URL (the API address ending in /api).
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl --fail --silent --show-error --retry 3 --retry-delay 10 --max-time 60 \
+            -X POST -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.API_URL }}/internal/sweep"

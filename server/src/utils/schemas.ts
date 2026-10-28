@@ -17,7 +17,7 @@ export const loginSchema = z.object({
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(8, 'New password must be at least 8 characters').max(100),
+  newPassword: z.string().min(10, 'New password must be at least 10 characters').max(100),
 });
 
 export const createRoomSchema = z.object({
@@ -39,15 +39,21 @@ export const createUserSchema = z.object({
   name: z.string().trim().min(2).max(100).optional(),
   role: z.enum(['RESIDENT', 'CLEANER']).default('RESIDENT'),
   room: z.string().optional(),
+  regNo: z.string().trim().min(1).max(40).optional(),
 });
 
 export const importUsersSchema = z.object({
   csv: z.string().min(1, 'CSV is empty').max(1_000_000),
-  createMissingRooms: z.boolean().default(false),
+  removeMissing: z.boolean().default(false),
 });
 
 export const createRequestSchema = z.object({
   roomId: z.string().min(1, 'Room ID is required'),
+});
+
+export const confirmRequestSchema = z.object({
+  rating: z.number().int().min(1, 'Rating is from 1 to 5').max(5, 'Rating is from 1 to 5').optional(),
+  feedback: z.string().trim().max(1000).optional(),
 });
 
 export const rejectRequestSchema = z.object({
@@ -59,6 +65,15 @@ export const updateUserSchema = z.object({
   email: z.string().email().optional(),
   role: z.enum(['RESIDENT', 'CLEANER', 'ADMIN']).optional(),
   roomId: z.string().nullable().optional(),
+});
+
+// A date (2026-10-01) or a full timestamp; a bare end date covers that whole day
+const reportDate = z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), 'Not a valid date');
+
+export const reportQuerySchema = z.object({
+  from: reportDate.optional(),
+  to: reportDate.optional(),
+  block: z.string().trim().toUpperCase().max(4).optional(),
 });
 
 export const paginationSchema = z.object({

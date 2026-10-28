@@ -5,6 +5,7 @@ import { WebSocketServer } from 'ws';
 import { createApp } from './app.js';
 import { attachClient, type LiveSocket } from './realtime.js';
 import { pool } from './db.js';
+import { sweepOverdueThrottled } from './overdue.js';
 
 const app = createApp();
 const port = Number(process.env.PORT) || 4000;
@@ -23,6 +24,9 @@ server.on('upgrade', (request, socket, head) => {
     void attachClient(ws as unknown as LiveSocket);
   });
 });
+
+// Alerts go out even when nobody is calling the API
+setInterval(() => void sweepOverdueThrottled(), 5 * 60_000).unref();
 
 const shutdown = async () => {
   server.close();

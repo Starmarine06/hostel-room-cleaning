@@ -4,6 +4,8 @@ export type CleaningStatus = 'PENDING' | 'IN_PROGRESS' | 'CLEANED' | 'CONFIRMED'
 export interface User {
   id: string;
   email: string;
+  regNo?: string | null;
+  mustChangePassword?: boolean;
   name: string;
   role: Role;
   roomId: string | null;
@@ -40,14 +42,30 @@ export interface CleaningRequest {
   cleanedAt: string | null;
   confirmedAt: string | null;
   rejectReason?: string | null;
+  rating?: number | null;
+  feedback?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ReportRow = Record<string, string | number | null>;
+
+export interface RatingReport {
+  data: ReportRow[];
+  blocks: ReportRow[];
+  rooms: ReportRow[];
+  comments: { room: string; cleaner: string; rating: number | null; feedback: string | null; at: string | null }[];
 }
 
 export interface ImportResult {
   summary: { total: number; created: number; assigned: number; moved: number; unchanged: number; failed: number };
   failures: { row: number; email: string; message: string }[];
+  // Only people whose password could not be emailed; the admin passes these on
   newAccounts: { email: string; password: string }[];
+  emailed: number;
+  mailEnabled: boolean;
+  removed: number;
+  removalSkipped?: string;
 }
 
 export interface AuthResponse {

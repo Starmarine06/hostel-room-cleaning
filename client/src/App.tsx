@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import Layout from './components/Layout';
@@ -12,6 +12,7 @@ import { useAuth } from './context/AuthContext';
 
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -23,6 +24,11 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Someone still on an issued password can only reach the page where they choose their own
+  if (user.mustChangePassword && !location.pathname.endsWith('/profile')) {
+    return <Navigate to="/profile" replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {

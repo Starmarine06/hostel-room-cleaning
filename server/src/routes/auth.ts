@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import { prisma } from '../db.js';
-import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { authenticate, authenticateAllowPending, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import { googleLoginSchema, loginSchema, changePasswordSchema, updateProfileSchema } from '../utils/schemas.js';
 
@@ -15,12 +15,15 @@ const adminEmails = (process.env.ADMIN_EMAILS || '')
   .split(',')
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
-const generateToken = (user: { id: string; email: string; name: string; role: string; roomId: string | null }) =>
+const generateToken = (user: { id: string; email: string; name: string; role: string; roomId: string | null; tokenVersion: number }) =>
   jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role, roomId: user.roomId },
+    { id: user.id, email: user.email, name: user.name, role: user.role, roomId: user.roomId, tv: user.tokenVersion },
     process.env.JWT_SECRET!,
-    { expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as SignOptions['expiresIn'] }
+    { algorithm: 'HS256', expiresIn: (process.env.JWT_EXPIRES_IN || '1d') as SignOptions['expiresIn'] }
   );
+
+// Checked when the email is unknown, so a wrong email takes as long to answer as a wrong password
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 
 const NOT_REGISTERED =
   "This email isn't registered for the cleaning service. Please ask the hostel office to add you.";
@@ -81,7 +84,8 @@ router.post('/login', validate(loginSchema), async (req: AuthRequest, res: Respo
     const user = await prisma.user.findUnique({ where: { email }, include: { room: true } });
 
     // Same answer for "no such email", "no password set" and "wrong password"
-    const ok = !!user?.password && (await bcrypt.compare(password, user.password));
+    const matches = await bcrypt.compare(password, user?.password || DUMMY_HASH);
+    const ok = !!user?.password && matches;
     if (!user || !ok) return res.status(401).json({ message: 'Invalid email or password' });
 
     if (!user.activatedAt) await prisma.user.update({ where: { id: user.id }, data: { activatedAt: new Date() } });
@@ -93,7 +97,7 @@ router.post('/login', validate(loginSchema), async (req: AuthRequest, res: Respo
   }
 });
 
-router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
+router.get('/me', authenticateAllowPending, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user!.id }, include: { room: true } });
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -120,15 +124,22 @@ router.patch('/profile', authenticate, validate(updateProfileSchema), async (req
   }
 });
 
-router.post('/change-password', authenticate, validate(changePasswordSchema), async (req: AuthRequest, res: Response) => {
+router.post('/change-password', authenticateAllowPending, validate(changePasswordSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { currentPassword, newPassword } = req.body as { currentPassword: string; newPassword: string };
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
     if (!user?.password || !(await bcrypt.compare(currentPassword, user.password))) {
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
-    await prisma.user.update({ where: { id: user.id }, data: { password: await bcrypt.hash(newPassword, 12) } });
-    res.json({ message: 'Password changed successfully' });
+    if (newPassword === currentPassword) {
+      return res.status(400).json({ message: 'Choose a password different from the current one' });
+    }
+    const changed = await prisma.user.update({
+      where: { id: user.id },
+      data: { password: await bcrypt.hash(newPassword, 12), mustChangePassword: false, tokenVersion: { increment: 1 } },
+    });
+    // Older sessions are now closed, so this one gets a fresh token
+    res.json({ message: 'Password changed successfully', token: generateToken(changed) });
   } catch (error) {
     console.error('Change password error:', error);
     res.status(500).json({ message: 'Failed to change password' });

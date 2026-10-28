@@ -6,7 +6,7 @@ import { User, Mail, Lock, Save, Eye, EyeOff } from 'lucide-react';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'password'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'password'>(user?.mustChangePassword ? 'password' : 'profile');
   
   // Profile form
   const [profileForm, setProfileForm] = useState({
@@ -47,14 +47,16 @@ export default function Profile() {
       return;
     }
 
-    if (passwordForm.newPassword.length < 8) {
-      toast.error('New password must be at least 8 characters');
+    if (passwordForm.newPassword.length < 10) {
+      toast.error('New password must be at least 10 characters');
       return;
     }
 
     setPasswordLoading(true);
     try {
-      await authService.changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      const token = await authService.changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      localStorage.setItem('token', token);
+      await refreshUser();
       toast.success('Password changed successfully');
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error) {
@@ -70,6 +72,12 @@ export default function Profile() {
         <h1 className="text-2xl font-bold text-gray-900">Profile Settings</h1>
         <p className="text-gray-600 mt-1">Manage your account settings and preferences</p>
       </div>
+
+      {user?.mustChangePassword && (
+        <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          You are using a password that was issued to you. Choose your own password below to continue.
+        </div>
+      )}
 
       <div className="border-b border-gray-200">
         <nav className="flex space-x-8" aria-label="Profile tabs">
@@ -206,7 +214,7 @@ export default function Profile() {
                   className="input pl-10 pr-10"
                   required
                   autoComplete="new-password"
-                  minLength={8}
+                  minLength={10}
                 />
                 <button
                   type="button"
@@ -216,7 +224,7 @@ export default function Profile() {
                   {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
-              <p className="mt-1 text-sm text-gray-500">Must be at least 8 characters</p>
+              <p className="mt-1 text-sm text-gray-500">Must be at least 10 characters</p>
             </div>
 
             <div>

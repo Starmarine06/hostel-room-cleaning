@@ -217,7 +217,7 @@ export default function CleanerDashboard() {
                             </span>
                           </div>
                           <p className="text-sm text-gray-500 mt-1">
-                            Requested {new Date(request.requestedAt).toLocaleString()} by {request.requester?.name}
+                            Requested {new Date(request.requestedAt).toLocaleString()} by {request.requester?.name ?? "a former student"}
                           </p>
                         </div>
                       </div>
